@@ -1,0 +1,1 @@
+All of the compilation output (including object files which are deleted shortly after compilation is complete) will appear in this directory.
