@@ -99,6 +99,68 @@ char * QDECL va_binaryfuc( char *format, ... ) {
 	return buf;
 }
 
+/////////////// Player ele ///////////////
+
+// Struct copied from CoD4x 1.8 server so we have definition for pmove_t *
+struct pmove_t
+{
+  struct playerState_s *ps;
+  char cmd[24]; // usercmd_t but we don't care about its type
+  char oldcmd[24]; // usercmd_t but we don't care about its type
+  int tracemask;
+  int numtouch;
+  int touchents[32];
+  float mins[3];
+  float maxs[3];
+  float xyspeed;
+  int proneChange;
+  float maxSprintTimeMultiplier;
+  char mantleStarted;
+  char pad1[3];
+  float mantleEndPos[3];
+  int mantleDuration;
+  int viewChangeTime;
+  float viewChange;
+  char handler;
+  char pad2[3];
+};
+
+// If [clientNum] == true, then they are allowed to elevate. By default only clientNum 0 is allowed to ele
+// index 0 = clientNum 0, etc
+char playerEleArr[64] = {1}; // Initialize first entry to 1, the rest to 0 (I use this for testing with clientNum 0)
+
+// This function gets called by our 'naked' assembly function
+bool Ext_AllowPlayerToEle(struct pmove_t *pPmove)
+{
+    int clientNum = pPmove->ps->clientNum;
+    if ((clientNum < 0) || (clientNum >= (sizeof(playerEleArr) / sizeof(playerEleArr[0]))))
+    {
+        return false; // Out of bounds, default to false
+    }
+    else
+    {
+        return (playerEleArr[clientNum] == 1);
+    }
+}
+
+// This function gets called due to the SetJump we put somewhere in PM_GroundTrace in CoD4 binary
+void __attribute__((naked)) Player_IsAllowedToEle(void)
+{
+    // First call our own function and then restore code we've overwritten
+    __asm
+    {
+        mov eax, [ebp-0xa8] // move pmove_t* into eax
+        mov [esp], eax      // add eax as argument for our function
+        call Ext_AllowPlayerToEle
+        
+        mov edi, [ebp-0xb4] // Code we overwrote
+        cmp dword eax, 0x1  // Check if player was allowed to ele
+        jl 0x805B205        // If not allowed, skip the CorrectSolidDeltas part that causes the elevator bug
+        jmp 0x0805AF71      // Otherwise (allowed), jump to 1 byte after the original code so execution can continue normally
+    }
+}
+
+/////////////// Player ele ///////////////
 
 static void Sys_PatchImageData( void )
 {
@@ -239,6 +301,8 @@ static byte patchblock_DB_LOADXASSETS[] = { 0x8a, 0x64, 0x20, 0x8,
 		Com_Memset((void*)0x81751fe, 0x90, 5);
 		
 	#endif
+    
+    SetJump(0x805AF6B, Player_IsAllowedToEle);
 	
 	SetCall(0x8050ab1, Jump_CalcHeight);
 	SetJump(0x8050786, Jump_IsPlayerAboveMax);
