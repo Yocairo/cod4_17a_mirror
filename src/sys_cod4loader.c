@@ -130,12 +130,12 @@ struct pmove_t
 char playerEleArr[64] = {1}; // Initialize first entry to 1, the rest to 0 (I use this for testing with clientNum 0)
 
 // This function gets called by our 'naked' assembly function
-bool Ext_AllowPlayerToEle(struct pmove_t *pPmove)
+qboolean Ext_AllowPlayerToEle(struct pmove_t *pPmove)
 {
     int clientNum = pPmove->ps->clientNum;
     if ((clientNum < 0) || (clientNum >= (sizeof(playerEleArr) / sizeof(playerEleArr[0]))))
     {
-        return false; // Out of bounds, default to false
+        return qfalse; // Out of bounds, default to false
     }
     else
     {
@@ -146,18 +146,15 @@ bool Ext_AllowPlayerToEle(struct pmove_t *pPmove)
 // This function gets called due to the SetJump we put somewhere in PM_GroundTrace in CoD4 binary
 void __attribute__((naked)) Player_IsAllowedToEle(void)
 {
-    // First call our own function and then restore code we've overwritten
-    __asm
-    {
-        mov eax, [ebp-0xa8] // move pmove_t* into eax
-        mov [esp], eax      // add eax as argument for our function
-        call Ext_AllowPlayerToEle
-        
-        mov edi, [ebp-0xb4] // Code we overwrote
-        cmp dword eax, 0x1  // Check if player was allowed to ele
-        jl 0x805B205        // If not allowed, skip the CorrectSolidDeltas part that causes the elevator bug
-        jmp 0x0805AF71      // Otherwise (allowed), jump to 1 byte after the original code so execution can continue normally
-    }
+    asm volatile(
+	"movl -0xb4(%ebp), %edi		\n\t" // move pmove_t* into edi (this is also the code we overwrote in the cod4 binary)
+	"movl %edi, (%esp)		\n\t" // add edi as argument for our next function call
+	"call Ext_AllowPlayerToEle	\n\t" // call function so we can check if ele is allowed
+//	"movl -0xb4(%ebp), %edi		\n\t" // this could be necessary if the function call messed up edi (it doesn't seem to)
+	"cmpl $1, %eax			\n\t" // eax contains return value of our previous function call (player is allowed to ele?)
+	"jl 0x805B205			\n\t" // if not allowed, skip the CorrectSolidDeltas part that causes the elevator bug to exist
+	"jmp 0x0805AF71			\n\t" // otherwise (allowed), jump to 1 instruction after the instruction we applied our patch on (normal execution)
+    );
 }
 
 /////////////// Player ele ///////////////
